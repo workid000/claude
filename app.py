@@ -1,7 +1,9 @@
-from flask import Flask, render_template
-from database.db import get_db, init_db, seed_db
+import sqlite3
+from flask import Flask, render_template, request, redirect, url_for, flash
+from database.db import get_db, init_db, seed_db, create_user
 
 app = Flask(__name__)
+app.secret_key = "dev-secret-change-me"
 
 with app.app_context():
     init_db()
@@ -27,9 +29,32 @@ def privacy():
     return render_template("privacy.html")
 
 
-@app.route("/register")
+@app.route("/register", methods=["GET", "POST"])
 def register():
-    return render_template("register.html")
+    if request.method == "GET":
+        return render_template("register.html")
+
+    name             = request.form.get("name", "").strip()
+    email            = request.form.get("email", "").strip()
+    password         = request.form.get("password", "")
+    confirm_password = request.form.get("confirm_password", "")
+
+    if not name or not email or not password or not confirm_password:
+        flash("All fields are required.")
+        return render_template("register.html")
+
+    if password != confirm_password:
+        flash("Passwords do not match.")
+        return render_template("register.html")
+
+    try:
+        create_user(name, email, password)
+    except sqlite3.IntegrityError:
+        flash("Email already registered.")
+        return render_template("register.html")
+
+    flash("Account created! Please sign in.")
+    return redirect(url_for("login"))
 
 
 @app.route("/login")
