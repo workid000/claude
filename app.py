@@ -1,7 +1,11 @@
 import sqlite3
+from datetime import datetime
 from flask import Flask, render_template, request, redirect, url_for, flash, session
 from werkzeug.security import check_password_hash
-from database.db import get_db, init_db, seed_db, create_user, get_user_by_email
+from database.db import (
+    get_db, init_db, seed_db, create_user, get_user_by_email,
+    get_user_by_id, get_recent_expenses, get_expense_stats, get_category_totals,
+)
 
 app = Flask(__name__)
 app.secret_key = "dev-secret-change-me"
@@ -33,7 +37,7 @@ def privacy():
 @app.route("/register", methods=["GET", "POST"])
 def register():
     if session.get("user_id"):
-        return redirect(url_for("dashboard"))
+        return redirect(url_for("profile"))
     if request.method == "GET":
         return render_template("register.html")
 
@@ -63,7 +67,7 @@ def register():
 @app.route("/login", methods=["GET", "POST"])
 def login():
     if session.get("user_id"):
-        return redirect(url_for("dashboard"))
+        return redirect(url_for("profile"))
     if request.method == "GET":
         return render_template("login.html")
 
@@ -81,7 +85,7 @@ def login():
 
     session["user_id"]   = user["id"]
     session["user_name"] = user["name"]
-    return redirect(url_for("dashboard"))
+    return redirect(url_for("profile"))
 
 
 # ------------------------------------------------------------------ #
@@ -101,7 +105,46 @@ def dashboard():
 
 @app.route("/profile")
 def profile():
-    return "Profile page — coming in Step 4"
+    if not session.get("user_id"):
+        flash("Please log in to view your profile.")
+        return redirect(url_for("login"))
+
+    db_user = get_user_by_id(session["user_id"])
+    if not db_user:
+        session.clear()
+        return redirect(url_for("login"))
+
+    member_since = datetime.strptime(
+        db_user["created_at"], "%Y-%m-%d %H:%M:%S"
+    ).strftime("%B %d, %Y")
+
+    user = {
+        "name":         db_user["name"],
+        "email":        db_user["email"],
+        "member_since": member_since,
+    }
+
+    raw = get_expense_stats(session["user_id"])
+    stats = {
+        "total_spent":       f"${raw['total_spent']:.2f}",
+        "transaction_count": raw["transaction_count"],
+        "top_category":      raw["top_category"],
+    }
+
+    transactions = [
+        {
+            "date":        datetime.strptime(tx["date"], "%Y-%m-%d").strftime("%b %d, %Y"),
+            "description": tx["description"],
+            "category":    tx["category"],
+            "amount":      f"${tx['amount']:.2f}",
+        }
+        for tx in get_recent_expenses(session["user_id"])
+    ]
+
+    categories = get_category_totals(session["user_id"])
+
+    return render_template("profile.html", user=user, stats=stats,
+                           transactions=transactions, categories=categories)
 
 
 @app.route("/expenses/add")
