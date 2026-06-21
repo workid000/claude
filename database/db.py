@@ -60,6 +60,62 @@ def get_user_by_email(email):
     return user
 
 
+def get_user_by_id(user_id):
+    conn = get_db()
+    user = conn.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
+    conn.close()
+    return user
+
+
+def get_recent_expenses(user_id, limit=5):
+    conn = get_db()
+    rows = conn.execute(
+        "SELECT * FROM expenses WHERE user_id = ? ORDER BY date DESC LIMIT ?",
+        (user_id, limit),
+    ).fetchall()
+    conn.close()
+    return rows
+
+
+def get_expense_stats(user_id):
+    conn = get_db()
+    agg = conn.execute(
+        "SELECT SUM(amount), COUNT(*) FROM expenses WHERE user_id = ?", (user_id,)
+    ).fetchone()
+    total = agg[0] or 0.0
+    count = agg[1] or 0
+    top_row = conn.execute(
+        "SELECT category FROM expenses WHERE user_id = ? "
+        "GROUP BY category ORDER BY SUM(amount) DESC LIMIT 1",
+        (user_id,),
+    ).fetchone()
+    conn.close()
+    return {
+        "total_spent":       total,
+        "transaction_count": count,
+        "top_category":      top_row["category"] if top_row else "—",
+    }
+
+
+def get_category_totals(user_id):
+    conn = get_db()
+    rows = conn.execute(
+        "SELECT category, SUM(amount) AS total FROM expenses "
+        "WHERE user_id = ? GROUP BY category ORDER BY total DESC",
+        (user_id,),
+    ).fetchall()
+    conn.close()
+    grand = sum(r["total"] for r in rows)
+    return [
+        {
+            "name":   r["category"],
+            "amount": f"${r['total']:.2f}",
+            "pct":    round(r["total"] / grand * 100) if grand else 0,
+        }
+        for r in rows
+    ]
+
+
 def seed_db():
     conn = get_db()
     count = conn.execute("SELECT COUNT(*) FROM users").fetchone()[0]
